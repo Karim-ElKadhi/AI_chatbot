@@ -46,7 +46,7 @@ MediBot offers two main modules:
 ---
 
 
-##🧍‍♂️ User Module
+## 🧍‍♂️ User Module
 
 <details>
 <summary>🧭 Click to expand</summary>
