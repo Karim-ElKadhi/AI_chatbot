@@ -64,7 +64,12 @@ MediBot offers two main modules:
 4. View conversation history revisit previous conversations.
 
 
-| ![User Chat Interface](./utils/iny_user.png) | ![User History](./utils/history.png) |
+| ![User Chat Interface](./utils/iny_user.png) |
+
+------------------------------------------------------------------------------------------------------
+
+
+| ![User History](./utils/history.png) |
 
 
 </details>
@@ -98,7 +103,11 @@ The admin area empowers decision-makers with data-driven insights:
 
 - Identify negative trends or dissatisfaction in customer interactions.
 
-| ![Admin Dashboard](./utils/int_admin.png) | ![Admin Sentiment](./utils/admin.png) |
+| ![Admin Dashboard](./utils/int_admin.png) |
+
+------------------------------------------------------------------------------------------------------
+
+| ![Admin Sentiment](./utils/admin.png) |
 
 </details>
 
