@@ -1,4 +1,4 @@
-# 🧠 MediBot — AI Chatbot Platform for Insurance Services
+# 🧠AI Chatbot Platform for Insurance Services
 
 > **MediBot** is an intelligent, multimodal chatbot platform built with Python.  
 > It’s designed to enhance **insurance services** through voice and text interactions, emotion analysis, and data-driven dashboards.  
@@ -103,14 +103,23 @@ The admin area empowers decision-makers with data-driven insights:
 
 AI-chatbot/
 ├── main.py
+
 ├── utils
+
 │ └── lang.py
+
 ├── dataset
+
 │ ├── dataset.csv
+
 ├── database/
+
 │ └── databaset.db
+
 │ └── conversations.db
+
 ├── requirements.txt
+
 ├── README.md
 
 ## 📦 Installation
