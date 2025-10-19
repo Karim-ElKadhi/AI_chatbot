@@ -68,7 +68,7 @@ MediBot offers two main modules:
 ------------------------------------------------------------------------------------------------------
 
 
-![User History](./utils/history.png) 
+![User History](./utils/historique.png) 
 
 
 </details>
