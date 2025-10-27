@@ -112,6 +112,44 @@ The admin area empowers decision-makers with data-driven insights:
 
 ---
 
+### ⚙️ Technical Details
+
+MediBot is built using a modular, scalable, and RAG-enabled AI architecture to provide context-aware and accurate responses.
+
+### 🔹 Core AI Components
+
+- Retrieval-Augmented Generation (RAG)
+
+Uses LangChain to orchestrate retrieval of relevant information and generate responses.
+
+Enhances factual accuracy by combining dataset knowledge with LLM generation.
+
+- Vector Store & Semantic Search
+
+Embeddings generated via SentenceTransformers (all-MiniLM-L6-v2 or multilingual variants).
+
+FAISS vector store enables fast semantic search on the dataset (question, intent, category, response).
+
+- Large Language Model Integration
+
+Groq LLM generates natural, context-aware responses based on retrieved passages.
+
+Prompt templates adapt dynamically to the user’s language using get_system_prompt(language).
+
+- Multilingual Support
+
+Detects input language automatically.
+
+Retrieval and generation respect the detected language, ensuring consistent responses in French, English, or other languages.
+
+- Observability & Monitoring
+
+Langfuse tracks every RAG interaction: user query, retrieved context, LLM output, and metrics.
+
+Enables debugging, analytics, and continuous improvement of the chatbot’s accuracy.
+
+
+---
 ## 🧱 Project Structure
 
 AI-chatbot/
