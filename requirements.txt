@@ -14,3 +14,7 @@ openai
 altair
 bcrypt
 google-generativeai
+langchain 
+langchain-community
+faiss-cpu 
+langfuse
