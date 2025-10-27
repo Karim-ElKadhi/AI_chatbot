@@ -9,6 +9,13 @@ from sentence_transformers import SentenceTransformer
 import torch
 from audio_recorder_streamlit import audio_recorder
 import openai
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.llms.groq import ChatGroq
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+from langchain.docstore.document import Document
+from langfuse import Langfuse
 import uuid
 import os
 import sqlite3
@@ -36,7 +43,11 @@ genai.configure(api_key="Insert_your_google_api_key_here")
 #print(torch.cuda.is_available())
 #print(torch.cuda.current_device())
 #print(torch.cuda.get_device_name(0))
-
+langfuse = Langfuse(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+    host=os.getenv("LANGFUSE_HOST"),
+)
 
 # Chargement du modèle Embedding
 bert_model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
@@ -260,28 +271,23 @@ def get_system_prompt(language: str) -> str:
     else:
         return get_system_prompt("en") 
 
-# Fonction pour générer une réponse avec Groq
-def generate_response_with_groq(prompt: str, language: str = "fr") -> str:
-    system_prompt = get_system_prompt(language)
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content":system_prompt},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1500,
-        "top_p": 0.9
-    }
-    response = requests.post(GROQ_API_URL, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
+# Fonction pour trouver la meilleure correspondance dans le dataset en utilisant la similarité sémantique
+def find_best_match(prompt: str, df: pd.DataFrame):
+
+    # Sémantique
+    instruction_embeddings = bert_model.encode(df['instruction'].astype(str).tolist(), convert_to_tensor=True)
+    input_embedding = bert_model.encode(prompt, convert_to_tensor=True)
+    similarities_semantic = cosine_similarity(
+        [input_embedding.cpu().numpy()],
+        instruction_embeddings.cpu().numpy()
+    ).flatten()
+    best_match_index_semantic = similarities_semantic.argmax()
+    best_match_score_semantic = similarities_semantic[best_match_index_semantic]
+
+    if best_match_score_semantic > 0.65:
+        return df.iloc[best_match_index_semantic]['response'], df.iloc[best_match_index_semantic]['intent']
     else:
-        return f"Erreur : {response.status_code} - {response.text}"
+        return None, None
 
 # Fonction pour obtenir la réponse du chatbot d'assurance coté client
 def get_insurance_response(prompt: str, df: pd.DataFrame):
@@ -293,17 +299,10 @@ def get_insurance_response(prompt: str, df: pd.DataFrame):
     if language != "en":
         prompt_for_matching = translate_to_english(prompt)
 
-    # 3. Recherche dans le dataset avec le prompt en anglais
-    response, intent = find_best_match(prompt_for_matching, df)
+    # 3. Génération de la réponse
 
-    if response:
-        # 4. Traduire la réponse du dataset vers la langue originale de l'utilisateur
-        translated_response = translate_response(response, language)
-        return display_response(translated_response, intent), translated_response
-    else:
-        # 5. Appel Groq avec prompt multilingue
-        fallback = generate_response_with_groq(prompt, language)
-        return display_response(fallback), fallback
+    fallback = get_insurance_response(prompt, language)
+    return display_response(fallback), fallback
 
 
 # Fonction pour traduire le texte en anglais
@@ -421,24 +420,80 @@ def authenticate_user(username, password):
     return None
 
 
-# Fonction pour trouver la meilleure correspondance dans le dataset en utilisant la similarité sémantique
-def find_best_match(prompt: str, df: pd.DataFrame):
+# Conversion des lignes du dataset en documents utilisables par LangChain
+docs = [
+    Document(
+        page_content=f"Question: {row['question']}\nRéponse: {row['response']}",
+        metadata={
+            "intent": row["intent"],
+            "category": row["category"]
+        }
+    )
+    for _, row in df.iterrows()
+]
 
-    # Sémantique
-    instruction_embeddings = bert_model.encode(df['instruction'].astype(str).tolist(), convert_to_tensor=True)
-    input_embedding = bert_model.encode(prompt, convert_to_tensor=True)
-    similarities_semantic = cosine_similarity(
-        [input_embedding.cpu().numpy()],
-        instruction_embeddings.cpu().numpy()
-    ).flatten()
-    best_match_index_semantic = similarities_semantic.argmax()
-    best_match_score_semantic = similarities_semantic[best_match_index_semantic]
 
-    if best_match_score_semantic > 0.65:
-        return df.iloc[best_match_index_semantic]['response'], df.iloc[best_match_index_semantic]['intent']
-    else:
-        return None, None
+# Création du magasin vectoriel FAISS à partir des documents encodés
+vectorstore = FAISS.from_documents(docs, bert_model)
 
+
+# Sauvegarde locale pour réutilisation sans recalculer les embeddings :
+vectorstore.save_local("insurance_faiss_index")
+
+# Création du retriever pour obtenir les passages les plus proches
+retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+
+# Initialisation du modèle de génération Groq
+llm = ChatGroq(
+    temperature=0.7,  # contrôle de la créativité de la réponse
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    model_name=GROQ_MODEL  
+)
+# Définition du prompt utilisé dans la chaîne RAG 
+
+template = """
+{system_prompt}
+
+Use the following context to answer the user's question as clearly and accurately as possible and adapt to the specified language.
+
+Contexte :
+{context}
+
+Question :
+{question}
+
+Réponse :
+"""
+
+prompt = PromptTemplate(
+    template=template,
+    input_variables=["system_prompt", "context", "question"]
+)
+# Création de la chaîne RAG (retrieval + génération)
+
+rag_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    retriever=retriever,
+    chain_type="stuff",
+    chain_type_kwargs={"prompt": prompt}
+)
+# Fonction principale pour interagir avec le chatbot
+
+def get_insurance_response(prompt_utilisateur: str, langue: str = "fr"):
+    trace = langfuse.trace(name="insurance_rag_chat")
+    trace.update_input({"user_prompt": prompt_utilisateur, "language": langue})
+
+    # Création du prompt personnalisé
+    system_prompt = get_system_prompt(langue)
+
+    reponse = rag_chain.run({
+        "system_prompt": system_prompt,
+        "question": prompt_utilisateur
+    })
+    #utilisation du tracer de langfuse pour Tracer les interactions utilisateur-LLM , Analyser la qualité des réponses , Analyser la qualité des réponses (Temps de réponse ,Nombre de tokens utilisés,Latence du modèle)
+    trace.update_output({"response": reponse})
+    trace.end()
+    return reponse
 
 # Fonction pour détecter l'intention de l'utilisateur pour les reponses non trouvées dans le dataset
 def detect_intention(user_msg: str) -> str:
